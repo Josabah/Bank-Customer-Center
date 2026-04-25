@@ -121,5 +121,139 @@
   }
   body {
     @apply bg-background text-foreground;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 20px;
+  }
+}
+
+.container {
+  width: 100%;
+  max-width: 500px;
+  background: white;
+  border-radius: 20px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+}
+
+#root {
+  width: 100%;
+}
+
+.phone-header {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 600;
+}
+
+.bank-name {
+  font-size: 16px;
+}
+
+.call-timer {
+  font-size: 18px;
+  font-family: 'Courier New', monospace;
+}
+
+.chat-messages {
+  padding: 20px;
+  height: 350px;
+  overflow-y: auto;
+  background: #f8f9ff;
+}
+
+.message {
+  margin-bottom: 15px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  line-height: 1.5;
+  font-size: 14px;
+  max-width: 85%;
+  word-wrap: break-word;
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.message.agent {
+  background: #e8eef5;
+  color: #333;
+  margin-right: auto;
+}
+
+.message.user {
+  background: #667eea;
+  color: white;
+  margin-left: auto;
+}
+
+.input-area {
+  padding: 20px;
+  background: #f8f9ff;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-top: 1px solid #e0e0e0;
+}
+
+.start-btn, .stop-btn, .upload-btn {
+  padding: 12px 24px;
+  border: none;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.start-btn:hover, .stop-btn:hover, .upload-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+}
+
+.stop-btn {
+  background: #e74c3c;
+}
+
+.upload-btn {
+  background: #3498db;
+}
+
+.transcript {
+  padding: 15px 20px;
+  background: white;
+  border-top: 1px solid #e0e0e0;
+  font-size: 12px;
+  color: #666;
+  max-height: 100px;
+  overflow-y: auto;
+}
+
+@media (max-width: 480px) {
+  .container {
+    border-radius: 0;
+    max-width: 100%;
+  }
+
+  .chat-messages {
+    height: 300px;
   }
 }
