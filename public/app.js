@@ -1,40 +1,26 @@
-// Mock user database
-const USERS = {
-  "aymen": {
-    pin: "1234",
-    balance: "5200 birr",
-    transaction: "200 birr sent"
-  }
-};
-
-// State Machine
 const STATES = {
   IDLE: "IDLE",
   ASK_NAME: "ASK_NAME",
   ASK_PIN: "ASK_PIN",
-  AUTHENTICATED: "AUTHENTICATED",
-  MENU: "MENU"
+  MENU: "MENU",
 };
 
-// Global State
 let state = STATES.IDLE;
 let callStartTime = null;
 let timerInterval = null;
-let currentUser = null;
-let knowledgeBase = "";
+let callSessionId = null;
+let currentCustomerId = null;
+let currentCustomerName = null;
 let conversationHistory = [];
 
-// Speech Recognition Setup
 const SpeechRecognition = window.webkitSpeechRecognition || window.SpeechRecognition;
 const recognition = new SpeechRecognition();
 recognition.continuous = false;
 recognition.interimResults = false;
 recognition.lang = "en-US";
 
-// Speech Synthesis Setup
 const synth = window.speechSynthesis;
 
-// DOM Elements
 const idleScreen = document.getElementById("idle-screen");
 const callScreen = document.getElementById("call-screen");
 const startCallBtn = document.getElementById("start-call-btn");
@@ -46,14 +32,29 @@ const userMessage = document.getElementById("user-message");
 const userMessageGroup = document.getElementById("user-message-group");
 const listeningStatus = document.getElementById("listening-status");
 const callTime = document.getElementById("call-time");
-const kbUpload = document.getElementById("kb-upload");
 const kbStatus = document.getElementById("kb-status");
 
-// Event Listeners
 startCallBtn.addEventListener("click", startCall);
 endCallBtn.addEventListener("click", endCall);
 speakBtn.addEventListener("click", startListening);
-kbUpload.addEventListener("change", handleKBUpload);
+kbStatus.textContent = "Knowledge base is managed in Supabase.";
+
+async function apiRequest(url, options = {}) {
+  const response = await fetch(url, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options.headers,
+    },
+  });
+  const payload = await response.json();
+
+  if (!response.ok) {
+    throw new Error(payload.error?.message || "Request failed.");
+  }
+
+  return payload;
+}
 
 recognition.onstart = () => {
   listeningStatus.textContent = "🎙️ Listening...";
@@ -79,32 +80,49 @@ recognition.onend = () => {
   speakBtn.disabled = false;
 };
 
-// Call Management
-function startCall() {
+async function startCall() {
   state = STATES.ASK_NAME;
-  currentUser = null;
+  currentCustomerId = null;
+  currentCustomerName = null;
   conversationHistory = [];
-  
+
   idleScreen.classList.remove("active");
   callScreen.classList.add("active");
-  
+
   callStartTime = Date.now();
   startTimer();
-  
-  agentSpeak("Hello, welcome to Ethiopian Bank. What is your name?");
+
+  try {
+    const response = await apiRequest("/api/calls/start", { method: "POST" });
+    callSessionId = response.callSessionId;
+    agentSpeak(response.prompt, false);
+  } catch (error) {
+    agentSpeak(`I could not start the call: ${error.message}`);
+    endCall();
+  }
 }
 
 function endCall() {
   clearInterval(timerInterval);
+  const sessionToEnd = callSessionId;
   state = STATES.IDLE;
-  currentUser = null;
+  currentCustomerId = null;
+  currentCustomerName = null;
+  callSessionId = null;
   conversationHistory = [];
   synth.cancel();
-  
+
   callScreen.classList.remove("active");
   idleScreen.classList.add("active");
-  
+
   userMessageGroup.style.display = "none";
+
+  if (sessionToEnd) {
+    apiRequest("/api/calls/end", {
+      method: "POST",
+      body: JSON.stringify({ callSessionId: sessionToEnd }),
+    }).catch(console.error);
+  }
 }
 
 function startTimer() {
@@ -121,135 +139,121 @@ function startListening() {
   recognition.start();
 }
 
-// Speech Output
-function agentSpeak(text) {
+function agentSpeak(text, persist = true) {
   agentStatus.textContent = "Speaking...";
   agentMessage.textContent = text;
   conversationHistory.push({ speaker: "agent", text });
-  
+
+  if (persist) {
+    saveMessage("agent", text);
+  }
+
   const utterance = new SpeechSynthesisUtterance(text);
   utterance.rate = 1;
   utterance.pitch = 1;
   utterance.volume = 1;
-  
+
   utterance.onend = () => {
     agentStatus.textContent = "";
     setTimeout(() => {
       listeningStatus.textContent = "👂 Ready to listen...";
     }, 500);
   };
-  
+
   synth.cancel();
   synth.speak(utterance);
 }
 
-// User Input Handling
+function saveMessage(speaker, message) {
+  if (!callSessionId) return;
+
+  apiRequest("/api/calls/message", {
+    method: "POST",
+    body: JSON.stringify({ callSessionId, speaker, message }),
+  }).catch(console.error);
+}
+
 function handleUserInput(transcript) {
   userMessage.textContent = transcript;
   userMessageGroup.style.display = "block";
   conversationHistory.push({ speaker: "user", text: transcript });
-  
-  // Delay before agent responds (simulate real system)
+
   setTimeout(() => {
-    processUserInput(transcript.toLowerCase());
+    processUserInput(transcript.toLowerCase()).catch((error) => {
+      agentSpeak(`I ran into a backend issue: ${error.message}`);
+    });
   }, 1000);
 }
 
-function processUserInput(input) {
+async function processUserInput(input) {
   if (state === STATES.ASK_NAME) {
-    handleNameInput(input);
+    await handleNameInput(input);
   } else if (state === STATES.ASK_PIN) {
-    handlePinInput(input);
+    await handlePinInput(input);
   } else if (state === STATES.MENU) {
-    handleMenuInput(input);
+    await handleMenuInput(input);
   }
 }
 
-// Authentication Flow
-function handleNameInput(name) {
-  // Simple matching
-  if (name.includes("aymen")) {
-    currentUser = "aymen";
+async function handleNameInput(name) {
+  try {
+    const response = await apiRequest("/api/auth/identify", {
+      method: "POST",
+      body: JSON.stringify({ callSessionId, transcript: name }),
+    });
+    currentCustomerId = response.customerId;
+    currentCustomerName = response.displayName;
     state = STATES.ASK_PIN;
-    agentSpeak("Thank you. Please enter your PIN.");
-  } else {
+    agentSpeak(response.prompt, false);
+  } catch {
+    state = STATES.MENU;
     agentSpeak("I'm sorry, I couldn't find that name. Let me connect you to a human agent. Please hold.");
   }
 }
 
-function handlePinInput(pin) {
-  if (!currentUser) return;
-  
-  // Extract digits from the input
-  const digits = pin.replace(/\D/g, "");
-  
-  if (digits === USERS[currentUser].pin) {
+async function handlePinInput(pin) {
+  try {
+    const response = await apiRequest("/api/auth/verify-pin", {
+      method: "POST",
+      body: JSON.stringify({ callSessionId, customerId: currentCustomerId, pin }),
+    });
     state = STATES.MENU;
-    agentSpeak(`Welcome back, ${currentUser}. How can I help you today? You can ask for your balance, recent transaction, or anything else.`);
-  } else {
+    agentSpeak(
+      response.prompt.replace("Welcome back.", `Welcome back, ${currentCustomerName || "customer"}.`),
+      false
+    );
+  } catch {
+    state = STATES.MENU;
     agentSpeak("I'm sorry, that PIN is incorrect. Connecting you to a human agent.");
-    state = STATES.MENU; // Fallback to menu to prevent infinite loop
   }
 }
 
-function handleMenuInput(input) {
-  if (!currentUser) {
+async function handleMenuInput(input) {
+  if (!callSessionId || !currentCustomerId) {
     agentSpeak("I'm sorry, there was an authentication issue. Connecting you to a human agent.");
     return;
   }
 
-  // Intent matching
+  saveMessage("user", input);
+
   if (input.includes("balance")) {
-    const balance = USERS[currentUser].balance;
-    agentSpeak(`Your current account balance is ${balance}.`);
+    const summary = await apiRequest(`/api/accounts/summary?callSessionId=${callSessionId}`);
+    agentSpeak(`Your current account balance is ${summary.balance}.`);
   } else if (input.includes("transaction") || input.includes("recent")) {
-    const transaction = USERS[currentUser].transaction;
-    agentSpeak(`Your most recent transaction is: ${transaction}.`);
+    const transaction = await apiRequest(`/api/transactions/recent?callSessionId=${callSessionId}`);
+    agentSpeak(`Your most recent transaction is: ${transaction.description}.`);
   } else {
-    // Try knowledge base search
-    const kbMatch = searchKnowledgeBase(input);
-    if (kbMatch) {
-      agentSpeak(kbMatch);
+    const response = await apiRequest("/api/knowledge-base/search", {
+      method: "POST",
+      body: JSON.stringify({ query: input }),
+    });
+
+    if (response.match) {
+      agentSpeak(response.match.answer);
     } else {
       agentSpeak("I'm sorry, I didn't understand that. Let me connect you to a human agent who can help you better.");
     }
   }
-}
-
-// Knowledge Base
-function handleKBUpload(event) {
-  const file = event.target.files[0];
-  if (!file) return;
-
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    knowledgeBase = e.target.result;
-    kbStatus.textContent = "✅ Knowledge base loaded successfully!";
-  };
-  reader.onerror = () => {
-    kbStatus.textContent = "❌ Error loading file";
-  };
-  reader.readAsText(file);
-}
-
-function searchKnowledgeBase(query) {
-  if (!knowledgeBase) return null;
-
-  const lines = knowledgeBase.split("\n");
-  const queryWords = query.split(" ");
-
-  for (const line of lines) {
-    if (line.trim().length === 0) continue;
-
-    const lineWords = line.toLowerCase().split(" ");
-    const matches = queryWords.filter(word => lineWords.some(lw => lw.includes(word) && word.length > 2));
-
-    if (matches.length >= Math.min(2, queryWords.length)) {
-      return line.trim().substring(0, 150) + "...";
-    }
-  }
-
-  return null;
 }
 
 console.log("Bank Call Center initialized. Click 'Start Call' to begin.");

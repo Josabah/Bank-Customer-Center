@@ -72,16 +72,6 @@ body {
   margin-bottom: 15px;
 }
 
-#kb-upload {
-  width: 100%;
-  padding: 10px;
-  margin-bottom: 10px;
-  border: 2px dashed #ccc;
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 12px;
-}
-
 #kb-status {
   font-size: 12px;
   color: #667eea;

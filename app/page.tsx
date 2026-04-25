@@ -1,102 +1,339 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+
+type Message = {
+  speaker: 'agent' | 'user';
+  text: string;
+};
+
+type JsonResponse<T> = T & {
+  error?: string | { message?: string };
+};
+
+type CallState = 'IDLE' | 'ASK_NAME' | 'ASK_PIN' | 'MENU';
+
+async function readJson<T>(response: Response): Promise<T> {
+  const payload = (await response.json()) as JsonResponse<T>;
+
+  if (!response.ok) {
+    const error = typeof payload.error === 'string' ? payload.error : payload.error?.message;
+    throw new Error(error || 'Request failed.');
+  }
+
+  return payload;
+}
 
 export default function Home() {
   const [callActive, setCallActive] = useState(false);
   const [callTimer, setCallTimer] = useState('00:00');
-  const [messages, setMessages] = useState<Array<{ speaker: string; text: string }>>([]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [listeningStatus, setListeningStatus] = useState('');
-  const [kbStatus, setKbStatus] = useState('');
+  const [kbStatus] = useState('Knowledge base is managed in Supabase.');
   const [userMessage, setUserMessage] = useState('');
   const [showUserMessage, setShowUserMessage] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isBusy, setIsBusy] = useState(false);
 
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioUrlRef = useRef<string | null>(null);
   const callStartTimeRef = useRef<number | null>(null);
+  const callSessionIdRef = useRef<string | null>(null);
+  const currentCustomerIdRef = useRef<string | null>(null);
+  const currentCustomerNameRef = useRef<string | null>(null);
   const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const currentUserRef = useRef<string | null>(null);
-  const knowledgeBaseRef = useRef('');
-  const stateRef = useRef('IDLE');
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const synthRef = useRef(window.speechSynthesis);
+  const stateRef = useRef<CallState>('IDLE');
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const recordedChunksRef = useRef<Blob[]>([]);
 
-  const SpeechRecognition = typeof window !== 'undefined' ? (window.webkitSpeechRecognition || (window as any).SpeechRecognition) : null;
-  const recognitionRef = useRef<any>(null);
+  const addMessage = useCallback((speaker: Message['speaker'], text: string) => {
+    setMessages((prev) => [...prev, { speaker, text }]);
+  }, []);
 
-  const USERS = {
-    aymen: {
-      pin: '1234',
-      balance: '5200 birr',
-      transaction: '200 birr sent',
-    },
-  };
+  const saveMessage = useCallback(async (speaker: Message['speaker'], message: string) => {
+    if (!callSessionIdRef.current) return;
 
-  const STATES = {
-    IDLE: 'IDLE',
-    ASK_NAME: 'ASK_NAME',
-    ASK_PIN: 'ASK_PIN',
-    AUTHENTICATED: 'AUTHENTICATED',
-    MENU: 'MENU',
-  };
-
-  useEffect(() => {
-    if (SpeechRecognition) {
-      recognitionRef.current = new SpeechRecognition();
-      recognitionRef.current.continuous = false;
-      recognitionRef.current.interimResults = false;
-      recognitionRef.current.lang = 'en-US';
-
-      recognitionRef.current.onstart = () => {
-        setListeningStatus('🎙️ Listening...');
-      };
-
-      recognitionRef.current.onresult = (event: any) => {
-        let transcript = '';
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          transcript += event.results[i][0].transcript;
-        }
-        handleUserInput(transcript.trim());
-      };
-
-      recognitionRef.current.onerror = (event: any) => {
-        setListeningStatus('❌ Error: ' + event.error);
-      };
-
-      recognitionRef.current.onend = () => {
-        setListeningStatus('');
-      };
+    try {
+      await fetch('/api/calls/message', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          callSessionId: callSessionIdRef.current,
+          speaker,
+          message,
+        }),
+      });
+    } catch (error) {
+      console.error(error);
     }
   }, []);
 
-  const addMessage = (speaker: string, text: string) => {
-    setMessages((prev) => [...prev, { speaker, text }]);
+  const cleanupAudioUrl = () => {
+    if (audioUrlRef.current) {
+      URL.revokeObjectURL(audioUrlRef.current);
+      audioUrlRef.current = null;
+    }
   };
 
-  const agentSpeak = (text: string) => {
-    addMessage('agent', text);
-    setListeningStatus('Speaking...');
-
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 1;
-    utterance.pitch = 1;
-    utterance.volume = 1;
-
-    utterance.onend = () => {
-      setListeningStatus('');
-      setTimeout(() => {
-        setListeningStatus('👂 Ready to listen...');
-      }, 500);
-    };
-
-    synthRef.current.cancel();
-    synthRef.current.speak(utterance);
+  const stopMediaStream = () => {
+    mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+    mediaStreamRef.current = null;
   };
 
-  const startCall = () => {
-    stateRef.current = STATES.ASK_NAME;
-    currentUserRef.current = null;
+  const agentSpeak = useCallback(
+    async (text: string, persist = true) => {
+      addMessage('agent', text);
+      if (persist) void saveMessage('agent', text);
+      setListeningStatus('Speaking with Edge TTS...');
+      setIsSpeaking(true);
+
+      try {
+        const response = await fetch('/api/tts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text, voice: 'am-ET-MekdesNeural' }),
+        });
+
+        if (!response.ok) {
+          const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+          throw new Error(payload?.error || 'Edge TTS failed.');
+        }
+
+        const audioBlob = await response.blob();
+        cleanupAudioUrl();
+        const url = URL.createObjectURL(audioBlob);
+        audioUrlRef.current = url;
+
+        if (!audioRef.current) {
+          setIsSpeaking(false);
+          return;
+        }
+
+        audioRef.current.src = url;
+        await audioRef.current.play();
+      } catch (error) {
+        setIsSpeaking(false);
+        setListeningStatus(
+          error instanceof Error ? `TTS error: ${error.message}` : 'TTS error.'
+        );
+      }
+    },
+    [addMessage, saveMessage]
+  );
+
+  const askGroq = useCallback(
+    async (nextMessages: Message[], knowledgeBase?: string) => {
+      setIsBusy(true);
+      setListeningStatus('Thinking with Groq Llama 3.3 70B...');
+
+      try {
+        const response = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            messages: nextMessages,
+            knowledgeBase,
+          }),
+        });
+        const payload = await readJson<{ text: string }>(response);
+        await agentSpeak(payload.text);
+      } catch (error) {
+        await agentSpeak(
+          error instanceof Error
+            ? `ይቅርታ፣ የGroq መልስ ማግኘት አልተቻለም፦ ${error.message}`
+            : 'ይቅርታ፣ የGroq መልስ ማግኘት አልተቻለም።'
+        );
+      } finally {
+        setIsBusy(false);
+      }
+    },
+    [agentSpeak]
+  );
+
+  const handleUserTranscript = useCallback(
+    async (transcript: string) => {
+      if (!transcript) {
+        setListeningStatus('No speech detected.');
+        return;
+      }
+
+      setUserMessage(transcript);
+      setShowUserMessage(true);
+
+      const nextMessages: Message[] = [...messages, { speaker: 'user', text: transcript }];
+      setMessages(nextMessages);
+
+      if (stateRef.current === 'ASK_NAME') {
+        try {
+          const response = await fetch('/api/auth/identify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              callSessionId: callSessionIdRef.current,
+              transcript,
+            }),
+          });
+          const payload = await readJson<{
+            customerId: string;
+            displayName: string;
+            prompt: string;
+          }>(response);
+
+          currentCustomerIdRef.current = payload.customerId;
+          currentCustomerNameRef.current = payload.displayName;
+          stateRef.current = 'ASK_PIN';
+          await agentSpeak(payload.prompt, false);
+        } catch {
+          stateRef.current = 'MENU';
+          await agentSpeak(
+            'I could not find that customer. I will connect you to a human agent.'
+          );
+        }
+        return;
+      }
+
+      if (stateRef.current === 'ASK_PIN') {
+        try {
+          const response = await fetch('/api/auth/verify-pin', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              callSessionId: callSessionIdRef.current,
+              customerId: currentCustomerIdRef.current,
+              pin: transcript,
+            }),
+          });
+          const payload = await readJson<{ authenticated: boolean; prompt: string }>(response);
+
+          if (payload.authenticated) {
+            stateRef.current = 'MENU';
+            const name = currentCustomerNameRef.current ?? 'customer';
+            await agentSpeak(payload.prompt.replace('Welcome back.', `Welcome back, ${name}.`), false);
+          }
+        } catch {
+          stateRef.current = 'MENU';
+          await agentSpeak('That PIN is incorrect. I will connect you to a human agent.');
+        }
+        return;
+      }
+
+      if (!callSessionIdRef.current || !currentCustomerIdRef.current) {
+        await agentSpeak('There was an authentication issue. I will connect you to a human agent.');
+        return;
+      }
+
+      await saveMessage('user', transcript);
+
+      const lowerTranscript = transcript.toLowerCase();
+      if (lowerTranscript.includes('balance')) {
+        const response = await fetch(`/api/accounts/summary?callSessionId=${callSessionIdRef.current}`);
+        const payload = await readJson<{ balance: string }>(response);
+        await agentSpeak(`Your current account balance is ${payload.balance}.`);
+        return;
+      }
+
+      if (lowerTranscript.includes('transaction') || lowerTranscript.includes('recent')) {
+        const response = await fetch(
+          `/api/transactions/recent?callSessionId=${callSessionIdRef.current}`
+        );
+        const payload = await readJson<{ description: string }>(response);
+        await agentSpeak(`Your most recent transaction is: ${payload.description}.`);
+        return;
+      }
+
+      const kbResponse = await fetch('/api/knowledge-base/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: transcript }),
+      });
+      const kbPayload = await readJson<{ match: { answer: string } | null }>(kbResponse);
+      await askGroq(nextMessages, kbPayload.match?.answer);
+    },
+    [agentSpeak, askGroq, messages, saveMessage]
+  );
+
+  const transcribeAudio = useCallback(
+    async (audioBlob: Blob) => {
+      setIsBusy(true);
+      setListeningStatus('Transcribing with Groq Whisper Large v3...');
+
+      try {
+        const formData = new FormData();
+        const file = new File([audioBlob], 'amharic-speech.webm', {
+          type: audioBlob.type || 'audio/webm',
+        });
+        formData.append('audio', file);
+
+        const response = await fetch('/api/transcribe', {
+          method: 'POST',
+          body: formData,
+        });
+        const payload = await readJson<{ text: string }>(response);
+        await handleUserTranscript(payload.text);
+      } catch (error) {
+        setListeningStatus(
+          error instanceof Error ? `STT error: ${error.message}` : 'STT error.'
+        );
+      } finally {
+        setIsBusy(false);
+      }
+    },
+    [handleUserTranscript]
+  );
+
+  const startRecording = async () => {
+    if (isBusy || isRecording || isSpeaking) return;
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+
+      mediaStreamRef.current = stream;
+      mediaRecorderRef.current = recorder;
+      recordedChunksRef.current = [];
+
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) recordedChunksRef.current.push(event.data);
+      };
+
+      recorder.onstop = () => {
+        const audioBlob = new Blob(recordedChunksRef.current, {
+          type: recorder.mimeType || 'audio/webm',
+        });
+        stopMediaStream();
+        void transcribeAudio(audioBlob);
+      };
+
+      recorder.start();
+      setIsRecording(true);
+      setListeningStatus('Recording Amharic audio...');
+    } catch (error) {
+      setListeningStatus(
+        error instanceof Error ? `Microphone error: ${error.message}` : 'Microphone error.'
+      );
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current?.state === 'recording') {
+      mediaRecorderRef.current.stop();
+    }
+
+    setIsRecording(false);
+    setListeningStatus('Processing audio...');
+  };
+
+  const startCall = async () => {
+    stateRef.current = 'ASK_NAME';
+    callSessionIdRef.current = null;
+    currentCustomerIdRef.current = null;
+    currentCustomerNameRef.current = null;
     setMessages([]);
     setCallActive(true);
     setShowUserMessage(false);
+    setUserMessage('');
 
     callStartTimeRef.current = Date.now();
     timerIntervalRef.current = setInterval(() => {
@@ -106,130 +343,60 @@ export default function Home() {
       setCallTimer(`${minutes}:${seconds}`);
     }, 1000);
 
-    agentSpeak('Hello, welcome to Ethiopian Bank. What is your name?');
+    try {
+      const response = await fetch('/api/calls/start', { method: 'POST' });
+      const payload = await readJson<{ callSessionId: string; prompt: string }>(response);
+
+      callSessionIdRef.current = payload.callSessionId;
+      await agentSpeak(payload.prompt, false);
+    } catch (error) {
+      await agentSpeak(
+        error instanceof Error
+          ? `I could not start the call: ${error.message}`
+          : 'I could not start the call.'
+      );
+      endCall();
+    }
   };
 
   const endCall = () => {
     if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
-    stateRef.current = STATES.IDLE;
-    currentUserRef.current = null;
-    synthRef.current.cancel();
+    const callSessionId = callSessionIdRef.current;
+    if (mediaRecorderRef.current?.state === 'recording') {
+      mediaRecorderRef.current.stop();
+    }
+
+    stateRef.current = 'IDLE';
+    callSessionIdRef.current = null;
+    currentCustomerIdRef.current = null;
+    currentCustomerNameRef.current = null;
+    stopMediaStream();
+    audioRef.current?.pause();
+    cleanupAudioUrl();
     setCallActive(false);
     setCallTimer('00:00');
     setShowUserMessage(false);
+    setIsRecording(false);
+    setIsSpeaking(false);
+    setIsBusy(false);
     setListeningStatus('');
-  };
 
-  const startListening = () => {
-    if (recognitionRef.current && stateRef.current !== STATES.IDLE) {
-      recognitionRef.current.start();
+    if (callSessionId) {
+      void fetch('/api/calls/end', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ callSessionId }),
+      }).catch(console.error);
     }
   };
 
-  const handleUserInput = (transcript: string) => {
-    setUserMessage(transcript);
-    setShowUserMessage(true);
-    addMessage('user', transcript);
-
-    setTimeout(() => {
-      processUserInput(transcript.toLowerCase());
-    }, 1000);
-  };
-
-  const processUserInput = (input: string) => {
-    if (stateRef.current === STATES.ASK_NAME) {
-      handleNameInput(input);
-    } else if (stateRef.current === STATES.ASK_PIN) {
-      handlePinInput(input);
-    } else if (stateRef.current === STATES.MENU) {
-      handleMenuInput(input);
-    }
-  };
-
-  const handleNameInput = (name: string) => {
-    if (name.includes('aymen')) {
-      currentUserRef.current = 'aymen';
-      stateRef.current = STATES.ASK_PIN;
-      agentSpeak('Thank you. Please enter your PIN.');
-    } else {
-      agentSpeak('I\'m sorry, I couldn\'t find that name. Let me connect you to a human agent. Please hold.');
-    }
-  };
-
-  const handlePinInput = (pin: string) => {
-    if (!currentUserRef.current) return;
-
-    const digits = pin.replace(/\D/g, '');
-
-    if (digits === USERS[currentUserRef.current as keyof typeof USERS].pin) {
-      stateRef.current = STATES.MENU;
-      agentSpeak(
-        `Welcome back, ${currentUserRef.current}. How can I help you today? You can ask for your balance, recent transaction, or anything else.`
-      );
-    } else {
-      agentSpeak('I\'m sorry, that PIN is incorrect. Connecting you to a human agent.');
-      stateRef.current = STATES.MENU;
-    }
-  };
-
-  const handleMenuInput = (input: string) => {
-    if (!currentUserRef.current) {
-      agentSpeak('I\'m sorry, there was an authentication issue. Connecting you to a human agent.');
-      return;
-    }
-
-    if (input.includes('balance')) {
-      const balance = USERS[currentUserRef.current as keyof typeof USERS].balance;
-      agentSpeak(`Your current account balance is ${balance}.`);
-    } else if (input.includes('transaction') || input.includes('recent')) {
-      const transaction = USERS[currentUserRef.current as keyof typeof USERS].transaction;
-      agentSpeak(`Your most recent transaction is: ${transaction}.`);
-    } else {
-      const kbMatch = searchKnowledgeBase(input);
-      if (kbMatch) {
-        agentSpeak(kbMatch);
-      } else {
-        agentSpeak('I\'m sorry, I didn\'t understand that. Let me connect you to a human agent who can help you better.');
-      }
-    }
-  };
-
-  const searchKnowledgeBase = (query: string) => {
-    if (!knowledgeBaseRef.current) return null;
-
-    const lines = knowledgeBaseRef.current.split('\n');
-    const queryWords = query.split(' ');
-
-    for (const line of lines) {
-      if (line.trim().length === 0) continue;
-
-      const lineWords = line.toLowerCase().split(' ');
-      const matches = queryWords.filter(
-        (word) => lineWords.some((lw) => lw.includes(word) && word.length > 2)
-      );
-
-      if (matches.length >= Math.min(2, queryWords.length)) {
-        return line.trim().substring(0, 150) + '...';
-      }
-    }
-
-    return null;
-  };
-
-  const handleKBUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      knowledgeBaseRef.current = e.target?.result as string;
-      setKbStatus('✅ Knowledge base loaded successfully!');
+  useEffect(() => {
+    return () => {
+      if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+      stopMediaStream();
+      cleanupAudioUrl();
     };
-    reader.onerror = () => {
-      setKbStatus('❌ Error loading file');
-    };
-    reader.readAsText(file);
-  };
+  }, []);
 
   return (
     <div id="root">
@@ -251,23 +418,21 @@ export default function Home() {
           {!callActive ? (
             <>
               <button className="start-btn" onClick={startCall}>
-                🎤 Start Call
-              </button>
-              <button
-                className="upload-btn"
-                onClick={() => fileInputRef.current?.click()}
-              >
-                📄 Upload KB
+                Start Amharic Call
               </button>
               {kbStatus && <small>{kbStatus}</small>}
             </>
           ) : (
             <>
-              <button className="start-btn" onClick={startListening}>
-                🎤 Speak
+              <button
+                className="start-btn"
+                disabled={isBusy || isSpeaking}
+                onClick={isRecording ? stopRecording : startRecording}
+              >
+                {isRecording ? 'Stop Recording' : isSpeaking ? 'Agent Speaking...' : 'Record Speech'}
               </button>
               <button className="stop-btn" onClick={endCall}>
-                ⏹️ End Call
+                End Call
               </button>
             </>
           )}
@@ -285,12 +450,13 @@ export default function Home() {
           </div>
         )}
 
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".txt"
-          style={{ display: 'none' }}
-          onChange={handleKBUpload}
+        <audio
+          ref={audioRef}
+          onEnded={() => {
+            setIsSpeaking(false);
+            setListeningStatus('Ready to listen...');
+          }}
+          onPause={() => setIsSpeaking(false)}
         />
       </div>
     </div>
