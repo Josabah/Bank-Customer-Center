@@ -119,15 +119,206 @@
   * {
     @apply border-border outline-ring/50;
   }
-  body {
-    @apply bg-background text-foreground;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-    min-height: 100vh;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    padding: 20px;
+body {
+  @apply bg-background text-foreground;
+  background: #f5f7fa;
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 20px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.container {
+  width: 100%;
+  max-width: 520px;
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 4px 20px rgba(0, 51, 102, 0.1);
+  overflow: hidden;
+}
+
+#root {
+  width: 100%;
+}
+
+.phone-header {
+  background: linear-gradient(135deg, #003366 0%, #004d80 100%);
+  color: white;
+  padding: 24px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 700;
+  border-bottom: 3px solid #a6b3c0;
+  position: relative;
+  overflow: hidden;
+}
+
+.phone-header::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  right: -10%;
+  width: 200px;
+  height: 200px;
+  background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.bank-name {
+  font-size: 18px;
+  letter-spacing: 0.5px;
+  position: relative;
+  z-index: 1;
+}
+
+.call-timer {
+  font-size: 16px;
+  font-family: 'Courier New', monospace;
+  font-weight: 600;
+  position: relative;
+  z-index: 1;
+  background: rgba(255, 255, 255, 0.2);
+  padding: 6px 12px;
+  border-radius: 8px;
+}
+
+.chat-messages {
+  padding: 24px 20px;
+  height: 380px;
+  overflow-y: auto;
+  background: #f9fafb;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.chat-messages::-webkit-scrollbar {
+  width: 6px;
+}
+
+.chat-messages::-webkit-scrollbar-track {
+  background: #e8ecf1;
+  border-radius: 10px;
+}
+
+.chat-messages::-webkit-scrollbar-thumb {
+  background: #a6b3c0;
+  border-radius: 10px;
+}
+
+.message {
+  padding: 12px 16px;
+  border-radius: 12px;
+  line-height: 1.5;
+  font-size: 14px;
+  word-wrap: break-word;
+  animation: slideIn 0.3s ease-out;
+  max-width: 85%;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
   }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.message.agent {
+  background: #e8ecf1;
+  color: #003366;
+  margin-right: auto;
+  border-left: 4px solid #003366;
+  font-weight: 500;
+}
+
+.message.user {
+  background: #003366;
+  color: white;
+  margin-left: auto;
+  border-right: 4px solid #a6b3c0;
+}
+
+.input-area {
+  padding: 20px;
+  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border-top: 1px solid #e0e6ec;
+}
+
+.start-btn, .stop-btn, .upload-btn {
+  padding: 12px 24px;
+  border: none;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  background: linear-gradient(135deg, #003366 0%, #004d80 100%);
+  color: white;
+  letter-spacing: 0.3px;
+}
+
+.start-btn:hover, .upload-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 51, 102, 0.25);
+}
+
+.stop-btn {
+  background: linear-gradient(135deg, #d32f2f 0%, #c62828 100%);
+}
+
+.stop-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(211, 47, 47, 0.25);
+}
+
+.upload-btn {
+  background: linear-gradient(135deg, #1976d2 0%, #1565c0 100%);
+}
+
+.transcript {
+  padding: 14px 20px;
+  background: #f9fafb;
+  border-top: 1px solid #e0e6ec;
+  font-size: 12px;
+  color: #556370;
+  max-height: 90px;
+  overflow-y: auto;
+  line-height: 1.6;
+}
+
+.transcript small {
+  font-weight: 500;
+  color: #003366;
+}
+
+@media (max-width: 480px) {
+  .container {
+    border-radius: 0;
+    max-width: 100%;
+  }
+
+  .chat-messages {
+    height: 300px;
+  }
+
+  .phone-header {
+    padding: 20px 16px;
+  }
+
+  .bank-name {
+    font-size: 16px;
+  }
+}
 }
 
 .container {
