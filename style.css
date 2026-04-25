@@ -1,0 +1,285 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 20px;
+}
+
+.container {
+  width: 100%;
+  max-width: 500px;
+  background: white;
+  border-radius: 20px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+}
+
+.screen {
+  padding: 40px;
+  min-height: 600px;
+  display: none;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+}
+
+.screen.active {
+  display: flex;
+}
+
+/* Idle Screen */
+#idle-screen {
+  background: linear-gradient(180deg, #f8f9ff 0%, #f0f1ff 100%);
+}
+
+.logo {
+  font-size: 60px;
+  margin-bottom: 20px;
+}
+
+#idle-screen h1 {
+  color: #333;
+  font-size: 28px;
+  margin-bottom: 5px;
+}
+
+#idle-screen p {
+  color: #999;
+  margin-bottom: 40px;
+  font-size: 14px;
+}
+
+.kb-section {
+  margin-top: 40px;
+  padding-top: 40px;
+  border-top: 1px solid #e0e0e0;
+  width: 100%;
+}
+
+.kb-section h3 {
+  color: #555;
+  font-size: 14px;
+  margin-bottom: 15px;
+}
+
+#kb-upload {
+  width: 100%;
+  padding: 10px;
+  margin-bottom: 10px;
+  border: 2px dashed #ccc;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+#kb-status {
+  font-size: 12px;
+  color: #667eea;
+  margin-top: 5px;
+}
+
+/* Call Screen */
+.call-header {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 30px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.call-timer {
+  font-size: 24px;
+  font-weight: bold;
+  color: #667eea;
+  font-family: 'Courier New', monospace;
+}
+
+#call-screen {
+  background: #f8f9ff;
+  justify-content: space-between;
+}
+
+.call-body {
+  flex: 1;
+  width: 100%;
+  margin-bottom: 30px;
+  overflow-y: auto;
+  max-height: 350px;
+  padding-right: 10px;
+}
+
+.call-body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.call-body::-webkit-scrollbar-track {
+  background: #f0f0f0;
+  border-radius: 10px;
+}
+
+.call-body::-webkit-scrollbar-thumb {
+  background: #ccc;
+  border-radius: 10px;
+}
+
+.message-group {
+  margin-bottom: 30px;
+  text-align: left;
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.message-group.agent {
+  align-items: flex-start;
+}
+
+.message-group.user {
+  align-items: flex-end;
+}
+
+.label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #999;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+}
+
+.message {
+  padding: 12px 16px;
+  border-radius: 12px;
+  line-height: 1.5;
+  font-size: 14px;
+  max-width: 90%;
+  word-wrap: break-word;
+}
+
+.message-group.agent .message {
+  background: #e8eef5;
+  color: #333;
+}
+
+.message-group.user .message {
+  background: #667eea;
+  color: white;
+}
+
+.status {
+  font-size: 11px;
+  color: #999;
+  margin-top: 5px;
+}
+
+.call-footer {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 15px;
+  padding-top: 20px;
+  border-top: 1px solid #e0e0e0;
+}
+
+#listening-status {
+  font-size: 12px;
+  color: #667eea;
+  height: 20px;
+  font-weight: 500;
+}
+
+/* Buttons */
+.btn {
+  padding: 12px 24px;
+  border: none;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+}
+
+.btn:active {
+  transform: translateY(0);
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.btn-secondary {
+  background: #f0f0f0;
+  color: #333;
+  font-size: 12px;
+}
+
+.btn-small {
+  padding: 8px 16px;
+  font-size: 12px;
+}
+
+.btn-large {
+  width: 100%;
+  padding: 16px 24px;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.mic-icon {
+  font-size: 20px;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Responsive */
+@media (max-width: 480px) {
+  .container {
+    border-radius: 0;
+    min-height: 100vh;
+  }
+
+  .screen {
+    min-height: auto;
+    padding: 30px 20px;
+  }
+
+  .call-body {
+    max-height: 300px;
+  }
+}

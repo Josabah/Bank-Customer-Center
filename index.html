@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ethiopian Bank Voice Call Center</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <!-- Idle State -->
+    <div id="idle-screen" class="screen active">
+      <div class="logo">📞</div>
+      <h1>Ethiopian Bank</h1>
+      <p>Voice Call Center</p>
+      <button id="start-call-btn" class="btn btn-primary">Start Call</button>
+      
+      <div class="kb-section">
+        <h3>Upload Knowledge Base (Optional)</h3>
+        <input type="file" id="kb-upload" accept=".txt">
+        <p id="kb-status"></p>
+      </div>
+    </div>
+
+    <!-- Call Interface -->
+    <div id="call-screen" class="screen">
+      <div class="call-header">
+        <div class="call-timer">
+          <span id="call-time">00:00</span>
+        </div>
+        <button id="end-call-btn" class="btn btn-secondary btn-small">End Call</button>
+      </div>
+
+      <div class="call-body">
+        <!-- Agent Message -->
+        <div class="message-group agent">
+          <div class="label">Agent:</div>
+          <div id="agent-message" class="message">Hello, welcome to Ethiopian Bank</div>
+          <div id="agent-status" class="status"></div>
+        </div>
+
+        <!-- User Message -->
+        <div class="message-group user" id="user-message-group" style="display: none;">
+          <div class="label">You:</div>
+          <div id="user-message" class="message"></div>
+        </div>
+      </div>
+
+      <div class="call-footer">
+        <button id="speak-btn" class="btn btn-primary btn-large">
+          <span class="mic-icon">🎤</span> Speak
+        </button>
+        <p id="listening-status"></p>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
