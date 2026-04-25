@@ -7,7 +7,10 @@ export async function POST(request: Request) {
   try {
     const body = await readJson(request, identifySchema);
     const customer = await identifyCustomer(body.callSessionId, body.transcript);
-    const prompt = 'Thank you. Please enter your PIN.';
+    const prompt =
+      body.language === 'am'
+        ? `እናመሰግናለን ${customer.display_name}። እባክዎ ፒንዎን ይናገሩ።`
+        : `Thank you, ${customer.display_name}. Please say your PIN.`;
 
     await addCallMessage(body.callSessionId, 'user', body.transcript);
     await addCallMessage(body.callSessionId, 'agent', prompt);

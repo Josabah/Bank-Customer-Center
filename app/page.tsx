@@ -7,6 +7,8 @@ type Message = {
   text: string;
 };
 
+type SessionLanguage = 'en' | 'am';
+
 type JsonResponse<T> = T & {
   error?: string | { message?: string };
 };
@@ -14,14 +16,53 @@ type JsonResponse<T> = T & {
 type CallState = 'IDLE' | 'ASK_NAME' | 'ASK_PIN' | 'MENU';
 
 async function readJson<T>(response: Response): Promise<T> {
-  const payload = (await response.json()) as JsonResponse<T>;
+  const text = await response.text();
+  let payload: JsonResponse<T> | null = null;
+
+  if (text) {
+    try {
+      payload = JSON.parse(text) as JsonResponse<T>;
+    } catch {
+      if (!response.ok) {
+        throw new Error(text.slice(0, 160) || 'Request failed.');
+      }
+
+      throw new Error('Response was not valid JSON.');
+    }
+  }
 
   if (!response.ok) {
-    const error = typeof payload.error === 'string' ? payload.error : payload.error?.message;
+    const error = typeof payload?.error === 'string' ? payload.error : payload?.error?.message;
     throw new Error(error || 'Request failed.');
   }
 
+  if (!payload) {
+    throw new Error('Empty response from server.');
+  }
+
   return payload;
+}
+
+function isBalanceRequest(transcript: string) {
+  const lowerTranscript = transcript.toLowerCase();
+  return lowerTranscript.includes('balance') || lowerTranscript.includes('account money');
+}
+
+function isRecentTransactionRequest(transcript: string) {
+  const lowerTranscript = transcript.toLowerCase();
+  return lowerTranscript.includes('transaction') || lowerTranscript.includes('recent');
+}
+
+function needsAuthenticatedAccount(transcript: string) {
+  return isBalanceRequest(transcript) || isRecentTransactionRequest(transcript);
+}
+
+function detectSessionLanguage(transcript: string): SessionLanguage {
+  return /[\u1200-\u137F]/.test(transcript) ? 'am' : 'en';
+}
+
+function ttsVoiceFor(language: SessionLanguage) {
+  return language === 'am' ? 'am-ET-MekdesNeural' : 'en-US-JennyNeural';
 }
 
 export default function Home() {
@@ -42,6 +83,7 @@ export default function Home() {
   const callSessionIdRef = useRef<string | null>(null);
   const currentCustomerIdRef = useRef<string | null>(null);
   const currentCustomerNameRef = useRef<string | null>(null);
+  const sessionLanguageRef = useRef<SessionLanguage>('en');
   const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const stateRef = useRef<CallState>('IDLE');
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -86,14 +128,15 @@ export default function Home() {
     async (text: string, persist = true) => {
       addMessage('agent', text);
       if (persist) void saveMessage('agent', text);
-      setListeningStatus('Speaking with Edge TTS...');
+      const language = sessionLanguageRef.current;
+      setListeningStatus(language === 'am' ? 'በድምጽ እየተናገረ ነው...' : 'Speaking...');
       setIsSpeaking(true);
 
       try {
         const response = await fetch('/api/tts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text, voice: 'am-ET-MekdesNeural' }),
+          body: JSON.stringify({ text, voice: ttsVoiceFor(language) }),
         });
 
         if (!response.ok) {
@@ -135,15 +178,18 @@ export default function Home() {
           body: JSON.stringify({
             messages: nextMessages,
             knowledgeBase,
+            language: sessionLanguageRef.current,
           }),
         });
         const payload = await readJson<{ text: string }>(response);
         await agentSpeak(payload.text);
       } catch (error) {
         await agentSpeak(
-          error instanceof Error
-            ? `ይቅርታ፣ የGroq መልስ ማግኘት አልተቻለም፦ ${error.message}`
-            : 'ይቅርታ፣ የGroq መልስ ማግኘት አልተቻለም።'
+          sessionLanguageRef.current === 'am'
+            ? 'ይቅርታ፣ አሁን መልስ ማግኘት አልተቻለም።'
+            : error instanceof Error
+              ? `Sorry, I could not get an AI response: ${error.message}`
+              : 'Sorry, I could not get an AI response.'
         );
       } finally {
         setIsBusy(false);
@@ -166,6 +212,8 @@ export default function Home() {
       setMessages(nextMessages);
 
       if (stateRef.current === 'ASK_NAME') {
+        sessionLanguageRef.current = detectSessionLanguage(transcript);
+
         try {
           const response = await fetch('/api/auth/identify', {
             method: 'POST',
@@ -173,6 +221,7 @@ export default function Home() {
             body: JSON.stringify({
               callSessionId: callSessionIdRef.current,
               transcript,
+              language: sessionLanguageRef.current,
             }),
           });
           const payload = await readJson<{
@@ -187,8 +236,15 @@ export default function Home() {
           await agentSpeak(payload.prompt, false);
         } catch {
           stateRef.current = 'MENU';
-          await agentSpeak(
-            'I could not find that customer. I will connect you to a human agent.'
+          await saveMessage('user', transcript);
+          await askGroq(
+            nextMessages,
+            [
+              'The caller has not been authenticated yet.',
+              `Answer public and general banking questions only in ${sessionLanguageRef.current === 'am' ? 'Amharic' : 'English'}.`,
+              'If the caller gave a name and seems to be trying the demo, tell them to say "Aymen" clearly and then use PIN 1234.',
+              'For private account data, explain that name and PIN verification are required.',
+            ].join(' ')
           );
         }
         return;
@@ -203,6 +259,7 @@ export default function Home() {
               callSessionId: callSessionIdRef.current,
               customerId: currentCustomerIdRef.current,
               pin: transcript,
+              language: sessionLanguageRef.current,
             }),
           });
           const payload = await readJson<{ authenticated: boolean; prompt: string }>(response);
@@ -214,32 +271,47 @@ export default function Home() {
           }
         } catch {
           stateRef.current = 'MENU';
-          await agentSpeak('That PIN is incorrect. I will connect you to a human agent.');
+          await agentSpeak(
+            sessionLanguageRef.current === 'am'
+              ? 'ፒኑ ትክክል አይደለም። ከሰው ወኪል ጋር እንዲገናኙ አደርጋለሁ።'
+              : 'That PIN is incorrect. I will connect you to a human agent.'
+          );
         }
-        return;
-      }
-
-      if (!callSessionIdRef.current || !currentCustomerIdRef.current) {
-        await agentSpeak('There was an authentication issue. I will connect you to a human agent.');
         return;
       }
 
       await saveMessage('user', transcript);
 
-      const lowerTranscript = transcript.toLowerCase();
-      if (lowerTranscript.includes('balance')) {
-        const response = await fetch(`/api/accounts/summary?callSessionId=${callSessionIdRef.current}`);
-        const payload = await readJson<{ balance: string }>(response);
-        await agentSpeak(`Your current account balance is ${payload.balance}.`);
+      if (needsAuthenticatedAccount(transcript) && (!callSessionIdRef.current || !currentCustomerIdRef.current)) {
+        await agentSpeak(
+          sessionLanguageRef.current === 'am'
+            ? 'አጠቃላይ የባንክ ጥያቄዎችን መመለስ እችላለሁ፣ ግን የሂሳብ መረጃ ለማየት ማረጋገጫ ያስፈልጋል።'
+            : 'I can answer general banking questions now, but account details require verification.'
+        );
         return;
       }
 
-      if (lowerTranscript.includes('transaction') || lowerTranscript.includes('recent')) {
+      if (isBalanceRequest(transcript)) {
+        const response = await fetch(`/api/accounts/summary?callSessionId=${callSessionIdRef.current}`);
+        const payload = await readJson<{ balance: string }>(response);
+        await agentSpeak(
+          sessionLanguageRef.current === 'am'
+            ? `የአሁኑ ቀሪ ሂሳብዎ ${payload.balance} ነው።`
+            : `Your current account balance is ${payload.balance}.`
+        );
+        return;
+      }
+
+      if (isRecentTransactionRequest(transcript)) {
         const response = await fetch(
           `/api/transactions/recent?callSessionId=${callSessionIdRef.current}`
         );
         const payload = await readJson<{ description: string }>(response);
-        await agentSpeak(`Your most recent transaction is: ${payload.description}.`);
+        await agentSpeak(
+          sessionLanguageRef.current === 'am'
+            ? `የቅርብ ጊዜ ግብይትዎ፦ ${payload.description}።`
+            : `Your most recent transaction is: ${payload.description}.`
+        );
         return;
       }
 
@@ -330,6 +402,7 @@ export default function Home() {
     callSessionIdRef.current = null;
     currentCustomerIdRef.current = null;
     currentCustomerNameRef.current = null;
+    sessionLanguageRef.current = 'en';
     setMessages([]);
     setCallActive(true);
     setShowUserMessage(false);
@@ -370,6 +443,7 @@ export default function Home() {
     callSessionIdRef.current = null;
     currentCustomerIdRef.current = null;
     currentCustomerNameRef.current = null;
+    sessionLanguageRef.current = 'en';
     stopMediaStream();
     audioRef.current?.pause();
     cleanupAudioUrl();
@@ -454,7 +528,7 @@ export default function Home() {
           ref={audioRef}
           onEnded={() => {
             setIsSpeaking(false);
-            setListeningStatus('Ready to listen...');
+            setListeningStatus(sessionLanguageRef.current === 'am' ? 'ለማዳመጥ ዝግጁ ነው...' : 'Ready to listen...');
           }}
           onPause={() => setIsSpeaking(false)}
         />

@@ -1,7 +1,7 @@
 import { createCallSession, addCallMessage } from '@/lib/server/calls';
 import { jsonError, jsonOk } from '@/lib/server/http';
 
-const INITIAL_PROMPT = 'Hello, welcome to Ethiopian Bank. What is your name?';
+const INITIAL_PROMPT = 'Hello, welcome to Ethiopian Bank. Please say your name to continue.';
 
 export async function POST() {
   try {

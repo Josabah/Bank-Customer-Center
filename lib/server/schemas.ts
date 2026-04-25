@@ -7,12 +7,14 @@ export const callSessionSchema = z.object({
 export const identifySchema = z.object({
   callSessionId: z.string().uuid(),
   transcript: z.string().min(1),
+  language: z.enum(['en', 'am']).optional(),
 });
 
 export const verifyPinSchema = z.object({
   callSessionId: z.string().uuid(),
   customerId: z.string().uuid(),
   pin: z.string().min(1),
+  language: z.enum(['en', 'am']).optional(),
 });
 
 export const messageSchema = z.object({

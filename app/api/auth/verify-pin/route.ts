@@ -9,7 +9,9 @@ export async function POST(request: Request) {
     await verifyCustomerPin(body.callSessionId, body.customerId, body.pin);
 
     const prompt =
-      'Welcome back. How can I help you today? You can ask for your balance, recent transaction, or anything else.';
+      body.language === 'am'
+        ? 'እንኳን ደህና መጡ። ማንነትዎ ተረጋግጧል። ስለ ቀሪ ሂሳብ፣ የቅርብ ግብይት፣ ወይም ሌሎች የባንክ ጥያቄዎች መጠየቅ ይችላሉ።'
+        : 'Welcome back. You are verified. You can ask for your balance, recent transaction, mobile banking help, card support, or any general banking question.';
 
     await addCallMessage(body.callSessionId, 'user', '[PIN entered]');
     await addCallMessage(body.callSessionId, 'agent', prompt);

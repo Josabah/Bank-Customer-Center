@@ -1,25 +1,39 @@
 import { badRequest, notFound, unauthorized } from './errors';
 import { supabaseRequest } from '@/lib/supabase/rest';
+import { createDemoCallSession, getDemoCallSession, updateDemoCallSession } from './demo-data';
 import type { CallSession } from './types';
 
 export async function createCallSession() {
-  const [session] = await supabaseRequest<CallSession[]>('call_sessions', {
-    method: 'POST',
-    body: [{ status: 'active', auth_state: 'started' }],
-    prefer: 'return=representation',
-  });
+  try {
+    const [session] = await supabaseRequest<CallSession[]>('call_sessions', {
+      method: 'POST',
+      body: [{ status: 'active', auth_state: 'started' }],
+      prefer: 'return=representation',
+    });
 
-  return session;
+    return session;
+  } catch (error) {
+    console.warn('Supabase unavailable; starting demo call session locally.', error);
+    return createDemoCallSession();
+  }
 }
 
 export async function getCallSession(callSessionId: string) {
-  const session = await supabaseRequest<CallSession | null>('call_sessions', {
-    query: {
-      id: `eq.${callSessionId}`,
-      select: 'id,customer_id,status,auth_state',
-    },
-    maybeSingle: true,
-  });
+  const demoSession = getDemoCallSession(callSessionId);
+  if (demoSession) return demoSession;
+
+  let session: CallSession | null = null;
+  try {
+    session = await supabaseRequest<CallSession | null>('call_sessions', {
+      query: {
+        id: `eq.${callSessionId}`,
+        select: 'id,customer_id,status,auth_state',
+      },
+      maybeSingle: true,
+    });
+  } catch (error) {
+    console.warn('Supabase unavailable while loading call session.', error);
+  }
 
   if (!session) {
     throw notFound('Call session was not found.');
@@ -46,6 +60,9 @@ export async function updateCallSession(
   callSessionId: string,
   values: Partial<Pick<CallSession, 'customer_id' | 'status' | 'auth_state'> & { handoff_reason: string; ended_at: string }>
 ) {
+  const demoSession = updateDemoCallSession(callSessionId, values);
+  if (demoSession) return demoSession;
+
   const [session] = await supabaseRequest<CallSession[]>('call_sessions', {
     method: 'PATCH',
     query: {
@@ -59,7 +76,10 @@ export async function updateCallSession(
 }
 
 export async function addCallMessage(callSessionId: string, speaker: 'user' | 'agent', message: string) {
-  await getCallSession(callSessionId);
+  const session = await getCallSession(callSessionId);
+  if (getDemoCallSession(session.id)) {
+    return { id: crypto.randomUUID() };
+  }
 
   const [savedMessage] = await supabaseRequest<{ id: string }[]>('call_messages', {
     method: 'POST',
